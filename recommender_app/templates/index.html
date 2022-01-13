@@ -10,10 +10,13 @@
 
 <body>
   <main class="main">
-    <div id="input__ratings">
-      <button type="button" id="input__rating-button__add">Add Rating</button>
-    </div>
-    <div id="predicted__ratings">
+    <form action="{{ url_for('handle_data') }}" method="post" id="input-ratings-form">
+      <div id="input__ratings">
+        <button type="button" id="input__rating-button__add">Add Rating</button>
+        <input type="submit" value="Submit">
+      </div>
+    </form>
+    <div id="movie__recommendations">
     </div>
 
   </main>
