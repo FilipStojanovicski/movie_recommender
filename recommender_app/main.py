@@ -1,5 +1,5 @@
 from flask import Flask
-from flask import session, render_template, url_for, request
+from flask import render_template, url_for, request
 from flask_sqlalchemy import SQLAlchemy
 import sqlalchemy
 from sqlalchemy import UniqueConstraint
@@ -17,6 +17,11 @@ pg_host_dev = 'localhost'
 pg_port_dev = 5432
 DEV_DB = f"postgresql://{pg_user_dev}:{pg_pass_dev}@{pg_host_dev}:{pg_port_dev}/{pg_db_dev}"
 
+genres = ['genre_no_genres_listed', 'genre_action', 'genre_adventure', 'genre_animation', 'genre_children',
+          'genre_comedy', 'genre_crime', 'genre_documentary', 'genre_drama', 'genre_fantasy', 'genre_film_noir',
+          'genre_horror', 'genre_imax', 'genre_musical', 'genre_mystery', 'genre_romance', 'genre_sci_fi',
+          'genre_thriller', 'genre_war', 'genre_western']
+
 app = Flask(__name__)
 
 app.config['SECRET_KEY'] = FLASK_SECRET_KEY
@@ -26,10 +31,6 @@ db = SQLAlchemy(app)
 
 @app.route("/")
 def hello_world():
-    genres = ['genre_no_genres_listed', 'genre_action', 'genre_adventure', 'genre_animation', 'genre_children',
-              'genre_comedy', 'genre_crime', 'genre_documentary', 'genre_drama', 'genre_fantasy', 'genre_film_noir',
-              'genre_horror', 'genre_imax', 'genre_musical', 'genre_mystery', 'genre_romance', 'genre_sci_fi',
-              'genre_thriller', 'genre_war', 'genre_western']
     # Get Top 20 Most Popular Movies
     movie_counts_subquery = db.session.query(Ratings.movieId, func.count(Ratings.movieId).label(
         "movies_count")).group_by(Ratings.movieId).subquery()
@@ -55,20 +56,23 @@ def handle_data():
             inputs[keys[i]] = x[i]
         input_ratings.append(inputs)
 
-    print(input_ratings)
-
+    # Validate Ratings
     validated_ratings = [rating for rating in input_ratings if (rating['movies'] != '-1' and rating['ratings'] != '-1')]
 
-    print(validated_ratings)
+    validated_ratings_deduped = []
+    for rating in validated_ratings:
+        if rating['movies'] not in [x['movies'] for x in validated_ratings_deduped]:
+            validated_ratings_deduped.append(rating)
+    validated_ratings = validated_ratings_deduped
+
 
     response = {"successful": False}
     num_valid_ratings = len(validated_ratings)
 
-    if num_valid_ratings < 5:
-        return response
+    # if num_valid_ratings < 5:
+    #     return response
 
     validated_ratings = [{"movieId": int(x["movies"]), "rating": float(x["ratings"])} for x in validated_ratings]
-    print(validated_ratings)
 
     ratings = pd.read_sql_table(
         "ratings",
@@ -85,9 +89,28 @@ def handle_data():
         con=db.engine,
         schema="movie_recommender"
     )
-    movie_ratings = pd.merge(movie_ratings, movies, left_index = True, right_index = True)[0:40]
-    response['body'] = movie_ratings.to_dict(orient = 'records')
-    print(movie_ratings)
+
+    links = pd.read_sql_table(
+        "links",
+        con=db.engine,
+        schema="movie_recommender"
+    )
+
+    movie_ratings = pd.merge(movie_ratings, movies, left_index = True, right_index = True)
+
+    movie_ratings = pd.merge(movie_ratings, links, left_index=True, right_index=True, how = 'left')
+
+    imdb_url = "https://www.imdb.com/title/tt0{}/"
+    movie_ratings['imdb_url'] = movie_ratings['imdbId'].apply(lambda x: imdb_url.format(x))
+
+    movie_ratings_dict = {"genre_all": movie_ratings[0:50].to_dict(orient = 'records'),
+                          'genre_action': movie_ratings[0:50].to_dict(orient = 'records'),}
+
+    for genre in genres:
+        movie_ratings_dict[genre] = movie_ratings[movie_ratings[genre]][0:50].to_dict(orient = 'records')
+
+    response['successful'] = True
+    response['body'] = movie_ratings_dict
     response = json.dumps(response)
     return response
 
